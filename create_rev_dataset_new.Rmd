@@ -1,0 +1,484 @@
+---
+title: "create rehab dataset"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+library(fst)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+
+```
+
+```{r claims1, include=FALSE}
+
+
+fullrun <- 1
+
+if(fullrun){
+
+rev_ <- list()
+
+# peek in:
+#dta18 <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/MSZ_DBC2018.fst", from=1, to=10)
+
+vector <- paste0("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/MSZ_DBC20", 15:18, ".fst")
+
+for(i in 1:length(vector))
+{
+  rev_[[i]] <- read_fst(vector[i], c("BEGINJAAR","BEGINDATUM", "DIAGNOSE", "ZORGPRODUCT",
+                                    "KOPPEL_ID_PREST_ZA", "PSEUDO_BSN_ID", "INSTELLING_AANGELEVERD",
+                                    "VERGOEDBEDRAG_ZVW"))
+  
+  names(rev_[[i]]) <- tolower(names(rev_[[i]]))
+  rev_[[i]]$zorg_gr <- substring(rev_[[i]]$zorgproduct, 1, 6) 
+    rev_[[i]] <- rev_[[i]][rev_[[i]]$zorg_gr==990027, ]
+  rev_[[i]]$agb <- rev_[[i]]$instelling_aangeleverd
+  rev_[[i]]$agb4 <- substring(str_pad(rev_[[i]]$instelling_aangeleverd, 8, pad="0"), 1, 4)
+  rev_[[i]]$submitted_amt <- rev_[[i]]$vergoedbedrag_zvw
+  
+} 
+
+# combine into one dataframe:
+rev1518 <- Reduce(rbind, rev_)
+rev1518 <- rev1518[!is.na(rev1518$koppel_id_prest_za), ]
+
+# merge in new bsn number
+koppel <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/VRZ_DCL_KNM_2020.fst",
+                   c("PSEUDO_BSN_32", "PSEUDO_BSN_ID"))
+names(koppel) <- tolower(names(koppel))
+
+rev1518 <-merge(rev1518, koppel, by="pseudo_bsn_id") 
+
+
+# TAKE SAMPLE:
+rev1518 <- rev1518 %>%
+  sample_frac(1)
+
+rev_bsn <- rev1518 %>%
+  dplyr::select(koppel_id_prest_za)
+
+# save
+write_fst(rev1518, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev1518.fst")
+write_fst(rev_bsn, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_bsn.fst")
+   
+} else {
+  
+rev1518 <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev1518.fst")
+rev_bsn <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_bsn.fst")
+
+}
+
+```
+
+```{r act1, include=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+  
+act <- list()
+
+# Peek in:
+#act18 <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/Vektis_revidatie_activities_2018.fst", from =1, to =100)
+
+vector <- paste0("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/Vektis_revidatie_activities_20", 15:18,".fst" )
+
+for(i in 1:length(vector))
+{
+  act[[i]] <- read_fst(vector[i], c("PSEUDO_BSN_ID", "KOPPEL_ID_PREST_ZA", "BEGINJAAR", "BEGINDATUM_ZA", "AANTAL_ZA",
+                                    "ZORGACTIVITEIT"))
+  
+  names(act[[i]]) <- tolower(names(act[[i]]))
+  act[[i]] <- act[[i]][act[[i]]$zorgactiviteit %in% c(190800:190977, 190200:190219), ]
+} 
+
+# combine into one dataframe:
+act1518 <- Reduce(rbind, act)
+
+# keep only people in claims database:
+act1518 <-merge(act1518, rev_bsn, by="koppel_id_prest_za") 
+
+
+# save
+write_fst(act1518, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/act1518.fst")
+
+} else {
+  
+act1518 <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/act1518.fst")
+
+}
+
+```
+
+```{r multiplier, include=FALSE}
+
+fullrun <- 0
+
+if(fullrun){
+  
+
+# Calculate weighted treatment times per claim:
+library(readxl)
+multi <- read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/rehabilitation_wouter.xlsx", 
+                    sheet = "DIM_ACTIVITIES")
+multi <- multi[multi$ID_ZA_TIJDGEBONDENHEID==1 & !is.na(multi$ID_ZA_TIJDGEBONDENHEID), ]
+
+multi$wmin <- ifelse(multi$ID_ZA_DISCIPLINE==0, 14.5,
+                     ifelse(multi$ID_ZA_DISCIPLINE==4, 5.5,
+                            ifelse(multi$ID_ZA_DISCIPLINE==5, 6.5,
+                                   ifelse(multi$ID_ZA_DISCIPLINE==6, 5.5,
+                                          ifelse(multi$ID_ZA_DISCIPLINE==7, 4.5,
+                                                 ifelse(multi$ID_ZA_DISCIPLINE==9, 3.5,
+                                                        ifelse(multi$ID_ZA_DISCIPLINE==11, 5.5,
+                                                               ifelse(multi$ID_ZA_DISCIPLINE==13, 4.5, 
+                                                                      ifelse(multi$ID_ZA_DISCIPLINE==15, 4, 
+                                                                             ifelse(multi$ID_ZA_DISCIPLINE==16, 4.5,
+                                                                                    ifelse(multi$ID_ZA_DISCIPLINE==17, 7,
+                                                                                           ifelse(multi$ID_ZA_DISCIPLINE %in% c(1, 2, 3, 8, 10, 12, 14, 18), 5, NA)
+                                                                                           )))))))))))
+
+
+multi$min <- 5
+multi <- multi[, c("ID_ZORGACTIVITEIT", "ZORGACTIVITEIT", "wmin", "min")]
+
+# save
+write_fst(multi, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/multiplier.fst")
+
+
+} else {
+  
+multi <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/multiplier.fst")
+
+}
+
+```
+
+```{r merge together 1, include=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+  
+# Merge into activity dta:
+act2 <- merge(act1518, multi, by.x= "zorgactiviteit", by.y="ID_ZORGACTIVITEIT", all=T) %>%
+  filter(!is.na(koppel_id_prest_za))
+
+# Multiply by activity_amt:
+act2$weightmin <- act2$wmin * act2$aantal_za 
+act2$mins <- act2$min * act2$aantal_za 
+
+# inpatient days:
+act2$inpatient <- ifelse(act2$zorgactiviteit %in% c(190200:190218), 1, 0)
+act2$inpatient_days <- act2$inpatient * act2$aantal_za
+
+# keep only activities on inpatient days:
+act2 <- act2 %>%
+  group_by(koppel_id_prest_za, begindatum_za)%>%
+  mutate(tag_inpatient=max(inpatient_days))%>%
+  filter(tag_inpatient==1)
+
+# get rid of duplicates for same day, same zorgactiviteit, same mins:
+act2 <- act2 %>%
+  group_by(koppel_id_prest_za, begindatum_za, zorgactiviteit, mins, aantal_za)%>%
+  arrange(koppel_id_prest_za, begindatum_za)%>%
+  mutate(nact=row_number(),
+         max_nact=max(nact))%>%
+  filter(nact==1)
+
+# collapse to claim level: 
+act_collapse <- act2 %>%
+  group_by(koppel_id_prest_za, beginjaar) %>%
+  summarize(wmin = sum(weightmin, na.rm = T), 
+            min = sum(mins, na.rm = T), 
+            inpatient_days = sum(inpatient_days, na.rm = T)) %>%
+  filter(inpatient_days<367)
+
+# create whr variable:
+act_collapse$hr <- round(act_collapse$min/60, 1)
+act_collapse$whr <- round(act_collapse$wmin/60, 1)
+
+act_collapse <- act_collapse %>%
+  dplyr::select(koppel_id_prest_za,
+         beginjaar, 
+         inpatient_days,
+         hr,
+         whr)
+
+write_fst(act_collapse, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/act_collapse.fst")
+
+} else {
+  
+act_collapse<-read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/act_collapse.fst")
+
+}
+
+```
+
+```{r merge together 2}
+
+fullrun <- 1
+
+if(fullrun){
+  
+# merge in activities:
+rev_act <- merge(rev1518, act_collapse, by = c("beginjaar", "koppel_id_prest_za"))
+rev_act <- rev_act[!is.na(rev_act$koppel_id_prest_za) & !is.na(rev_act$inpatient_days), ]
+
+# Strange, there are a lot of claims w/o any rehab activities. 
+# they could also be indirect care that does not count towards treatment times.
+# in 2018, 2% had inpatient days but no weighted minutes: 
+
+# save
+write_fst(rev_act, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_new.fst")
+
+} else {
+  
+rev_act <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_new.fst")
+
+}
+
+```
+
+```{r subcat table}
+
+fullrun <- 0
+
+if(fullrun){
+  
+# upload rehabiliation excel(contains cutoff points... etc)
+
+library(readxl)
+tbl <- read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/rehabilitation_wouter.xlsx")
+tbl <- tbl[,c("Zorgproductcode","Ingangsdatum", "Min dagen", "Max dagen", "Min uren", "Max uren", "Type", "Aandoening", "Staffel")]
+tbl$year <- substring(tbl$Ingangsdatum, 1,4)
+
+# upload translation of subcategories:
+trans <- read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/rehabilitation_wouter.xlsx", 
+            sheet = "Sheet1")
+
+tbl <- merge(tbl, trans, by="Aandoening", all=T)
+
+tbl$clin <- ifelse(tbl$Type=="Poliklinisch", 0, 1)
+
+tbl <- tbl[, -c(3:5)]
+
+# change name
+names(tbl)[7] <- "beginjaar"
+names(tbl)[2] <- "zorgproduct"
+
+write_fst(tbl, "U:/datarepos_bron_onderzoek_revalidatie/Results/subcat_tbl.fst")
+
+
+} else {
+  
+tbl <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Results/subcat_tbl.fst")
+
+}
+
+```
+
+```{r merge in subcat table, echo=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+  
+rev_act_subcat <- merge(rev_act, tbl, by=c("zorgproduct", "beginjaar"), all=T)
+
+# provider type: 0- GH, 1-UMC, 2-RC, 3-other  
+rev_act_subcat$ptype <- ifelse(rev_act_subcat$agb4 %in% "0601", "GH", 
+                        ifelse(rev_act_subcat$agb4 %in% "0602", "UMC",
+                               ifelse(rev_act_subcat$agb4 %in% "0616", "RC", 
+                                      ifelse(rev_act_subcat$agb4 %in% "2222", "ZBC", "Other"))))
+# discard variables:
+rev_act_subcat2 <- rev_act_subcat[!rev_act_subcat$zorgproduct %in% 990027131:990027133,]  
+
+colnames(rev_act_subcat2)[which(names(rev_act_subcat2) == "Min uren")] <- "minhr"
+colnames(rev_act_subcat2)[which(names(rev_act_subcat2) == "last_inpatient_day")] <- "wkday"
+
+# save
+write_fst(rev_act_subcat2, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat.fst")
+
+
+} else {
+  
+rev_act_subcat <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat.fst")
+
+}
+
+```
+
+```{r adjust for short rehab, include=FALSE}
+
+fullrun <- 0
+
+if(fullrun){
+  
+# for rev:
+rev_act_subcat$Condition2 <- ifelse(rev_act_subcat$Condition=="Short rehabilitation", NA, rev_act_subcat$Condition)
+
+# fill NA values using the most likely condition (based on diagnosis codes)
+rev_act_subcat2 <- rev_act_subcat %>% 
+group_by(diagnose) %>% 
+mutate(Condition2 = ifelse(is.na(Condition2), median(Condition2, na.rm = T), Condition2),)
+
+write.fst(rev_act_subcat2, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat2.fst")
+
+} else {
+rev_act_subcat2 <- read.fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat2.fst")
+}
+
+```
+
+```{r create risk-eq dataset, include=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+
+memory.limit(size=90000000)
+
+# peek in:
+#rve18 <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/RVE/rve_old/zin_combined_2018.fst", from=1, to=10)
+
+rve <- list()
+years <- list(2015, 2016, 2017, 2018)
+
+vector <- paste0("U:/datarepos_bron_onderzoek_revalidatie/RVE/rve_old/zin_combined_20", 15:18,".fst")
+
+for(i in 1:length(vector))
+{
+  rve[[i]] <- read_fst(vector[i], c("fkgc", "l5gc", "pseubsn"))
+  names(rve[[i]]) <- tolower(names(rve[[i]]))
+  rve[[i]]$fkgc <- as.numeric(rve[[i]]$fkgc)
+  rve[[i]]$beginjaar <- years[[i]]
+  
+} 
+
+# combine into one dataframe:
+rve_all <- Reduce(rbind, rve)
+
+# drop individuals that are not rehab:
+pseubsn <- rev_act_subcat2 %>% 
+  group_by(pseudo_bsn_32) %>% 
+  summarise((n=n())) %>% 
+  dplyr::select(pseudo_bsn_32)
+
+rve_all <- rve_all[rve_all$pseubsn %in% pseubsn$pseudo_bsn_32, ]
+
+# save
+#write_fst(rve_all, "U:/datarepos_bron_onderzoek_revalidatie/RVE/rve_old/rve_all.fst")
+  
+
+} else {
+
+rve_all <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/RVE/rve_old/rve_all.fst")
+
+
+}
+
+```
+
+```{r merge in risk-eq dataset, include=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+
+rev_act_subcat_rve <- merge(rev_act_subcat2, rve_all, 
+                            by.x=c("pseudo_bsn_32", "beginjaar"), 
+                            by.y=c("pseubsn", "beginjaar"))
+
+rev_act_subcat_rve$female <- ifelse(rev_act_subcat_rve$l5gc %in% 21:40, 1, 0)
+
+# save
+write_fst(rev_act_subcat_rve, "U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat_rve_new.fst")
+
+
+} else {
+
+rev_act_subcat_rve <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Vektis MSZ/rev_act_subcat_rve_new.fst")
+
+}
+
+```
+
+```{r age, include=FALSE}
+
+fullrun <- 1
+
+if(fullrun){
+
+age <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/RVE/AGE_GENDER2018.fst")
+
+age2 <- age %>%
+  rename(birthyr=GEBOORTEJAAR,
+         pseudo_bsn_32=PSEUDO_BSN_32) %>%
+  dplyr::select(pseudo_bsn_32,
+                birthyr)
+
+rev_act_subcat_rve_age <- merge(rev_act_subcat_rve, age2, by="pseudo_bsn_32")
+
+rev_act_subcat_rve_age <- rev_act_subcat_rve_age %>%
+  mutate(age=(as.numeric(beginjaar) - birthyr))
+
+# save
+write_fst(rev_act_subcat_rve_age, "U:/datarepos_bron_onderzoek_revalidatie/Results/rev_act_subcat_rve_age.fst")
+
+
+} else {
+
+rev_act_subcat_rve_age <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Results/rev_act_subcat_rve_age.fst")
+
+}
+
+```
+
+```{r final cleaning, include=FALSE}
+
+fullrun <-1
+
+if(fullrun){
+  
+dat_final <- rev_act_subcat_rve_age %>%
+  mutate(above_15=ifelse(inpatient_days>14,1,0)) %>%
+  dplyr::select(koppel_id_prest_za,
+                beginjaar, 
+                begindatum,
+                submitted_amt,
+                above_15,
+                Condition2,
+                Condition,
+                female,
+                l5gc,
+                ptype,
+                whr,
+                inpatient_days,
+                age,
+                fkgc,
+                zorgproduct,
+                agb,
+                whr)
+
+# save
+write_fst(dat_final, "U:/datarepos_bron_onderzoek_revalidatie/Results/dat_final.fst")
+
+
+} else {
+
+dat_final <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Results/dat_final.fst")
+
+}
+
+```
+
+
+
+
+

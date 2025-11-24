@@ -1,0 +1,956 @@
+---
+title: Do financial incentives affect length of hospital stays? - Evidence from rehabilitation care in the Netherlands
+  centers
+author:
+  Katalin Gaspar, Misja Mikkers, Ramsis Croes, Xander Koolman
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    reference_docx: word-styles-reference.docx
+abstract: |
+  Non-linear reimbursement contracts in healthcare have been increasingly used to quantify providers’ responses to financial incentives. In the present research, we utilize a large one-off increase in the reimbursement of rehabilitation care to assess to what extent providers are willing to modify their treating behavior in order to reach a higher tariff associated with a higher DRG-level. Inpatient rehabilitation care in the Netherlands follows a two-part stepwise function. A lower, so-called non-clinical, tariff-schedule is available for short hospital stays (<14 days), while a higher, clinical, tariff-schedule is utilized for longer treatments. Switching from one schedule to the other at day 15 of inpatient care leads to a sudden, in certain cases up to 2-fold, increase in tariffs. We show that, for most conditions, patients are seldom treated in an inpatient setting for less than 15 days, while the majority of patients are discharged at (or after) the threshold. Using logit regression, we estimate the probability of discharge at each inpatient day after correcting for differences in patient characteristics and week days effects. We calculate the differences in the predicted probability of discharge at the end of each week and the beginning of the following week to test whether there are any sudden changes in the likelihood of discharge. Our calculations show, that for 6 of the 7 care-types the partial effect of going from week 2 (ending with day 14) to week 3 (beginning with day15) is the largest, while this effect is comparable to other weeks for only one care-type (i.e. amputation). Therefore, we conclude that providers deliberately extend treatment durations in order to maximize profits. As healthcare payment systems move away from piecewise reimbursement (e.g. fees-for-service arrangements), and services are increasingly ‘lumped’ together into e.g. DRGs and bundled payments, the likelihood of such discontinuities in tariff schedules radically increases. Our results illustrates how such discontinuities in reimbursements can lead to distortions in the amount of healthcare provided, therefore they represent an important contribution to the debate on optimal health care contracting design.
+   
+bibliography: bib_25_11.bib
+always_allow_html: true
+---
+
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r lib, include=FALSE}
+library(fst)
+#library(stargazer)
+library(tidyverse)
+library(modelsummary)
+library(gridExtra)
+library(flextable)
+library(grid)
+library(broom)
+library(tidyr)
+library(mfx)
+library(tidymodels)
+library(fastDummies)
+
+```
+
+```{r dat, include=FALSE}
+
+dat <- read.fst("U:/datarepos_bron_onderzoek_revalidatie/Results/dat_final.fst")
+
+dat <- dat %>%
+  mutate(
+  agecat = factor(l5gc,
+  levels = seq(40),
+  labels = c("0 yr.", "1-4 yrs.", "5-9 yrs.",
+  "10-14 yrs.", "15-17 yrs.", "18-24 yrs.",
+  "25-29 yrs.", "30-34 yrs.", "35-39 yrs.",
+  "40-44 yrs.", "45-49 yrs.", "50-54 yrs.",
+  "55-59 yrs.", "60-64 yrs.", "65-69 yrs.",
+  "70-74 yrs.", "75-79 yrs.", "80-84 yrs.",
+  "85-89 yrs.", "90- yrs.",
+  "0 yr.", "1-4 yrs.", "5-9 yrs.",
+  "10-14 yrs.", "15-17 yrs.", "18-24 yrs.",
+  "25-29 yrs.", "30-34 yrs.", "35-39 yrs.",
+  "40-44 yrs.", "45-49 yrs.", "50-54 yrs.",
+  "55-59 yrs.", "60-64 yrs.", "65-69 yrs.",
+  "70-74 yrs.", "75-79 yrs.", "80-84 yrs.",
+  "85-89 yrs.", "90- yrs.")),
+  agecat2=as.numeric(agecat),
+  agecat3=factor(agecat2),
+  d.fkgc=ifelse(fkgc>0, 1, 0)) %>%
+  filter(inpatient_days %in% 1:120) %>%
+  filter(beginjaar %in% 2015:2018) %>%
+  mutate(wkday=as.factor(weekdays(begindatum)))%>%
+  dplyr::select(koppel_id_prest_za,
+        Condition,
+        Condition2,
+        inpatient_days,
+        beginjaar,
+        begindatum,
+        agecat,
+        agecat2,
+        agecat3,
+        female,
+        fkgc,
+        wkday,
+        submitted_amt,
+        age,
+        d.fkgc, 
+        zorgproduct,
+        whr, 
+        agb)%>%
+  sample_frac()
+
+dat <- dat[complete.cases(dat), ]
+breaks <- c(0, 7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98,105, 112,121)
+
+dat <-dummy_cols(dat, select_columns = c("agecat2", "d.fkgc"))
+
+model.f<- paste("discharge ~ week.dummies*days.index + female +agecat2_1 + agecat2_10+ agecat2_11 + agecat2_12 + agecat2_13 + agecat2_14 + agecat2_15 + agecat2_16  + agecat2_17 + agecat2_18 + agecat2_19 + agecat2_2 + agecat2_20 + agecat2_3 + agecat2_4 + agecat2_5 + agecat2_6 + agecat2_7 + agecat2_8 + agecat2_9 + d.fkgc" )
+
+list_age <- c("agecat2_1" , "agecat2_10", "agecat2_11" , "agecat2_12" , "agecat2_13" , "agecat2_14" , "agecat2_15" , "agecat2_16"  , "agecat2_17" , "agecat2_18" , "agecat2_19" , "agecat2_2" , "agecat2_20" , "agecat2_3" , "agecat2_4" , "agecat2_5" , "agecat2_6" , "agecat2_7" , "agecat2_8" , "agecat2_9")
+
+```
+
+# Introduction
+
+Recent health economics research has demonstrated that discontinuities in reimbursement design can lead to undesirable distortions and unnecessary supply of medical care. Economic theory suggests that a sudden increase in reimbursement based on treatment duration incentivizes providers to unnecessarily extend the length of treatment in order to receive higher tariffs, but once that tariff has been reached, the provider quickly discharge patients. This phenomenon is often referred to as strategic discharge behavior. Such behavior was confirmed by many recent papers: Medicare long-term acute care – @Einav2018b; @Eliason, mental health care – @Douven; sepsis care – @Bauml, etc. While Pletscher (2016) found some distortions in psychiatric care in Switzerland in the case of patients where the financial incentive was sufficiently large, and no significant response for other patients, and Pott et al. (2021) found no significant distortion in psychiatric care in Germany (@Pletscher, @Pott).
+Whether or not such behavior is present is pivotal question when designing optimal healthcare financing arrangements. As healthcare systems move away from piecewise (fee-for-service type) arrangements towards more bundling of care, it is inevitable that such discontinuities in reimbursement schedules will be more prevalent. This could be along the lines of diagnosis-related groups (or DRGs), as in the case of Dutch rehabilitation care, where services are ‘lumped’ together into healthcare products based on diagnoses, but it could also arise as result of a bundled payment strategy, where services are combined into clinically-defined episodes of care @Scott.  It is, therefore, critical that health policy makers have a good understanding of whether or not such discontinuities lead to distortions in the provision of care.
+In the present paper, we test this hypothesis in rehabilitation care in the Netherlands. Dutch rehabilitation care follows a two-tier system, where outpatient care and hospital admissions up to 14 days (so-called non-clinical care) are financed using a lower tariff-schedule, while hospital admissions with 15 or more days of hospital stay (so-called clinical) are reimbursed at a significantly higher tariff-schedule. For example, in the case of rehabilitation of brain disorders, moving from a non-clinical to a clinical schedule simply by adding one addition inpatient day can increase the provider’s reimbursement by close to EUR9,000. (See Figures 1a) In addition to the length of hospital stay, tariffs also increase with the (weighted) hours of treatment provided. However, these increases in marginal tariffs are never as large as at the 15 day mark. In practice, majority of patients are treated either fully in an outpatient setting or with hospital stays longer than 14 days and only a small percentage of patients are discharged with inpatient days ranging between 1 and 14 days. (see Figure 1 and Table 1).
+
+ 
+```{r tariff1, include=FALSE}
+plot<-list()
+
+table <- read_fst( "U:/datarepos_bron_onderzoek_revalidatie/Extras/tariff_table.fst")
+
+
+#clean table:
+table <- table %>%
+  group_by(Condition, Staffel, beginjaar, clin) %>%
+  filter(row_number() == 1)
+
+brain <- table %>%
+  filter(beginjaar==2018,
+         Condition=="Brain Disorder") %>%
+  group_by(Condition, Zorgproductcode, clin) %>%
+  summarise(aprice=mean(aprice, na.rm=T)/1000,
+            minhr=mean(minhr)) %>%
+  arrange(Condition, clin, minhr) %>%
+  group_by(Condition, clin) %>%
+  mutate(maxhr=lead(minhr-1),
+         maxhr=ifelse(is.na(maxhr), 1000, maxhr),
+         aprice=aprice*1000,
+         diff=maxhr-minhr)
+
+brain2 <- brain %>%
+  mutate(diff=ifelse(is.na(diff),1,diff))%>%
+  group_by(clin)%>%
+  tidyr::uncount(diff) %>%
+  mutate(whr.index=row_number(),
+         `Type of care`=factor(clin, levels =c(0,1), labels = c("Non-Clinical", "Clinical")))
+
+plot1<-ggplot(brain2)+
+  theme_bw()+
+  geom_line(aes(x=whr.index, y=aprice, linetype=`Type of care`))+
+  xlab("Weighted treatment hours") + 
+  ylab("Regulated tariff (€)") + 
+  scale_color_discrete(name = "Legend", labels = c("Clinical", "Non-Clinical"))+
+  theme(legend.position = c(0.75, 0.25))
+
+plot1
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig1a.png" )
+
+```
+
+```{r tariffs2, include=FALSE}
+
+# Marginal tariff per day:
+tariff2 <- dat %>%
+  filter(inpatient_days %in% 1:120,
+         Condition2=="Brain Disorder")%>%
+  group_by(inpatient_days)%>%
+  summarize(mtariff=log(median(submitted_amt)), na.rm=T) %>%
+  mutate(mr=(mtariff - lag(mtariff))*100)
+
+plot2<-ggplot(tariff2)+
+  theme_bw()+
+  geom_line(aes(x=inpatient_days, y=mr), color="black")+
+ # geom_ribbon(aes(x=inpatient_days, y=mtariff, ymin=SE.low, ymax=SE.high), color="grey58", alpha=0.1)+
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.1) +
+  geom_text(aes(x=15, label="15", y=2), angle=360, size=3)+
+  xlab("Inpatient days") + 
+  ylab("Percentage change in tariff (%)")+
+  xlim(0,120)
+
+plot2
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig1b.png" )
+
+
+```
+
+```{r tariff3, include=FALSE}
+
+brain <- dat %>%
+  filter(inpatient_days %in% 1:120,
+         Condition2=="Brain Disorder") %>%
+  group_by(inpatient_days) %>%
+  summarize(mean.whr = mean(whr),
+            median.tariff=round(median(submitted_amt)),
+            mean.tariff=round(mean(submitted_amt)/1000,2),
+            sd.tariff=sd(submitted_amt)) %>%
+  ungroup() %>%
+  mutate(avg_total_tariff = 
+           sum(mean.tariff)/sum(inpatient_days),
+         avg_total_tariff2 = 
+           sum(mean.tariff)/sum(inpatient_days),
+         avg_total_tariff3 = mean(mean.tariff/inpatient_days),
+         marg_tariff = (mean.tariff - lag(mean.tariff)),
+         line = avg_total_tariff3 * inpatient_days)
+
+plot1<-ggplot(brain)+
+  theme_bw()+
+  geom_line(aes(x=inpatient_days, y=mean.tariff), color="black")+
+  #geom_line(aes(x=inpatient_days, y=marg_tariff), color="red", linetype="dotted", size=1)+
+  geom_line(aes(x=inpatient_days, y=marg_tariff), color="red", size=0.5)+
+  xlab("Discharge days") + 
+  ylab("Average tariff (1000 €)")+
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.1) +
+  geom_text(aes(x=15, label="Day 15", y=50), angle=360, size=3.5)+
+  expand_limits(x = 0, y = 0)
+
+plot1
+
+#ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig1a.png" )
+
+```
+
+
+```{r mean vs median}
+
+test <- dat %>%
+  dplyr::select(inpatient_days, Condition2, submitted_amt) %>%
+  filter(inpatient_days %in% 0:30,
+         Condition2=="Brain Disorder")
+
+stats <- test %>% 
+  group_by(inpatient_days) %>%
+  summarize(mean.tariff=mean(submitted_amt),
+         median.tariff=median(submitted_amt))
+
+
+ggplot(test , aes(x = submitted_amt, y=..density..)) + 
+  theme_bw() +
+  facet_wrap(~ inpatient_days)+
+  geom_histogram(color = "black", bins = 100, fill="gray", alpha=0)+
+  geom_vline(data= stats, aes(xintercept = mean.tariff), color="blue")+
+  geom_vline(data= stats, aes(xintercept = median.tariff), color="red")
+
+
+```
+
+
+### Figure 1 a-b: Regulated prices per weighted treatment hours (left) and percentage change in tariffs per inpatient day in 2018 (right) for the rehabilitation of brain disorders in 2015-2018
+```{r tariff graphs, echo=FALSE}
+grid.arrange(arrangeGrob(plot1, plot2, ncol=2, nrow=1), heights=2, widths=2)
+g <- arrangeGrob(plot1, plot2, ncol=2, nrow=1)
+ggsave(file="U:/datarepos_bron_onderzoek_revalidatie/Results/fig1.png", g)
+ 
+```
+
+Due to the long list of acute conditions that may require rehabilitation care (e.g. injuries and trauma, stroke, major surgeries, birth defects, developmental issues, or chronic pain) (@Krug,@Rauch) rehabilitation care tends to be an extremely multi-disciplinary process. One that requires different care-givers (hospital medical specialists, physical therapists, speech therapists, occupational therapists and mental health care providers) to work closely together. Depending on the severity of the damage and the type of care required, rehabilitation care may be conducted in an inpatient or outpatient setting by general hospitals, university medical centers, independent treatment centers, rehabilitation centers and other multi-categorical providers. In Gaspar, Koolman (forthcoming), we assess the prevalence of strategic discharges in outpatient rehabilitation facilities in response to a step-wise discontinuous reimbursement schedule in place based on treatment duration. Our findings suggest no response to incentives by traditional hospitals (general and academic hospitals), moderate response by rehabilitation centers and strong response by more profit-oriented independent treatment centers. In the present paper, we turn our attention to a different type of discontinuity, one based on the number of hospital days. As our focus in this paper is inpatient care and only rehabilitation centers and multi-categorical hospitals have facilities to admit patients with hospital stay, in the present paper we limit our analysis to these two provider types.
+
+Healthcare in the Netherlands is built on the fundamentals of regulated competition, a system in which residents are required by law to purchase basic health insurance from a selection of private insurers. These insurers are trusted with negotiating the price of care with individual providers. Although rehabilitation belongs to a special segment of care where maximum tariffs are set by the Dutch Healthcare Authority (NZA), providers may deviate downwards from the regulated price. In practice, variation in negotiated prices between providers and insurers remains minimal in this segment of care. The insurance market consists of four major health insurers with nationwide networks and a few smaller players with limited coverage. Services provided by contracted providers are reimbursed fully above the yearly front-end deductible amount (between €350-385 during period of our study). In general, Dutch hospital staff either receive a monthly fixed salary or are paid on production-bases as self-employed. However, staff employed in rehabilitation care (including physicians, physiotherapists, occupational therapists, etc.) represent an exception and are almost exclusively paid on monthly fixed salaries.
+
+#	Data 
+
+Claims- and activity-level datasets were provided by VEKTIS for the years 2015 to 2018. In the present paper, we exclusively use claims registered by RCs and multi-categorical hospitals: 33,353 claims in total. Each claim contains information on the type of medical activity (e.g. hospital stay, physician contact, physiotherapy, occupational therapy, psychological therapy, etc.) performed during the treatment. Treatment times are often used in weighted form by multiplying the number of activities by a pre-specified multiplier. This multiplier is used to adjust for variation in the cost of care. E.g. a 5 minutes contact with a physician is multiplied by 2.9, leading to 14.5 minutes of weighted time, while the same amount of time with a physiotherapist is worth 5 minutes of weighted time using a multiplier of 1. Weighted treatment times determine where the patient’s care falls within a tariff-schedule, while the number of inpatient days determines whether a non-clinical or clinical tariff-schedule is applicable. Claims can be open for a maximum of 120 days, at which point they are automatically closed and declared. 
+Rehabilitation care in the Netherlands is categorized into 7 types of care and 1 additional categorized as short rehabilitation. (See Table 1 for list of care-types). Majority of care (97% of claims in our dataset) is performed in outpatient facilities, while the minority (3%) is performed as inpatient care. This latter segment is the focus of our analysis. Within inpatient care, about 4% of the care is categorized as short rehabilitation with a maximum weighted treatment hours (WHR) of 9 hours. This period is devoted to establishing a diagnosis and setting up a treatment plan. Once the treatment duration crosses the 9 weighted hour mark, a diagnosis and subcategory of care is established and treatment begins. Even though care-type is not yet indicated, an initial diagnosis code is already determined. This allows us to approximate the care-type the patient would follow had treatment continued. Therefore, in order to obtain a complete distribution for each care-type, we categorize short rehabilitation into care-types using this diagnosis code for the analysis part of the paper. 
+
+
+# Methods
+
+Our goal is to test whether the predicted probabilities of discharge differ week-by-week. In particular, we want to test whether the likelihood of a discharge significantly increases between week 2 (ending the day before the threshold) and week 3 (beginning the day of the threshold) after patient characteristics and fluctuations in week days are corrected for. This latter is important, as the day of the week a patient was admitted (and therefore due to be discharged) may unintentionally affect our results. For example, a patient that reaches the threshold day during the weekend is less likely to be discharged that day than someone who reaches the threshold day on a Friday.
+We begin our analysis by expanding our dataset to include one line per claim per day and creating a binary variable indicating the discharge day. As a claim can be open for a maximum of 120 days, this will lead to 120 lines per claim. Next, we split the 120 days of inpatient days into smaller segments in order to capture the change in the slope of the curve. We use 7-day increments, which provides us with two advantages: firstly, it creates a natural separation between the inpatient day before the threshold (day 14) and the day of the threshold (day 15) and secondly, it represents one full week of treatment.
+Hence, we end up with the following regression:
+
+$$Prob(discharge_{i}=1)=\sum_{j=1}^{J}week_{j}+\sum_{j=1}^{J}week_{j}*day_{it}+X_{it}+e_{it}$$
+where discharge variable indicates whether patient i is discharged on day t, the week variable indicates the number of weeks in hospital care, the day variable is an index indicating number of days in hospital care, and X refers to patient characteristics (sex, age and healthcare spending in the previous year). We use the above formula to calculate the predicted probability of discharge for each week and each inpatient day. 
+
+Next, we quantify the change in the predicted probability of moving from one week to the next by calculating the difference in probability between the last day of one week and the first day of the following week.  This method allows us to identify any sudden changes in the likelihood of a discharge between weeks and also it allows us to account for any differences in patient characteristics and differences due to fluctuations in week-days.  We present our findings graphically.
+
+
+# Results
+## Section 1: Descriptive Statistics
+
+In Table 1, we present the number of inpatient days for all years registered by rehabilitation centers and multicategorical hospitals. Although there is considerable variation between care-types, on average about 87% of the care falls within 1 and 14 days, while the rest (13%) involve 15 days or more days in hospital stay. This leads to a unique distribution with missing mass of registered claims from 1 up to 14 inpatient days, and an excess mass up until 20 days and an approximately log-normal distribution beyond that point. (See Figure 2) Rehabilitation for chronic pain and mental disorders. For this care-type, more than 30% of claims are registered below the threshold, with days 5, 10, and 15 showing the most prominent spikes. 
+
+### Table 1: Descriptive statistics
+```{r table1, echo=FALSE}
+library(table1)
+
+rndr <- function(x, name, ...) {
+  if(!is.numeric(x)) return(render.categorical.default(x))
+  what <-switch(name, 
+                female = "Mean",
+                d.fkgc = "Mean",
+                age = "Mean (SD)")
+  parse.abbrev.render.code(c("", what))(x)
+}
+
+level_order <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+table <- dat %>%
+mutate(wkday=factor(weekdays(begindatum), level=level_order))%>%
+dplyr::select(Condition, d.fkgc, age, female, wkday)
+
+table1::label(table$d.fkgc) <- "High pharmaceutical consumption in the previous year"
+table1::label(table$age) <- "Age (in years)"
+table1::label(table$female) <- "Female"
+table1::label(table$wkday) <- "Weekdays"
+table1::table1(~ d.fkgc + female + age + wkday | Condition, data = table, render=rndr)
+#table1::table1(~ d.fkgc + female + age + wkday | Condition, data = table)
+
+```
+
+```{r n_days, include=FALSE}
+desc <- dat[ ,c("Condition", "inpatient_days")] 
+desc <- desc[complete.cases(desc),] 
+
+desc$stay <- ifelse(desc$inpatient_days==0, 0, ifelse(desc$inpatient_days>0 & desc$inpatient_days<15, 1, 2))
+
+desc1 <- desc%>%
+  group_by(Condition, stay)%>%
+  summarize(n=n())%>%
+  mutate(p = round((n / sum(n))*100, 1), 
+         stay= factor(stay, levels=c(1,2), labels= c("0=<Days<15","Days>=15")))
+
+# Overall:
+desc2 <- desc%>%
+  group_by(stay)%>%
+  summarize(n=n())%>%
+  mutate(p = round((n / sum(n))*100, 1), 
+         stay= factor(stay, levels=c(1,2), labels= c("0=<Days<15","Days>=15")),
+         Condition= c(rep("Overall", 2)))
+
+desc3<-rbind(desc1, desc2)
+        
+col_Names <- c("Condition", "Length of stay","No. of Obs.", "Perc.")
+colnames(desc3) <- col_Names
+  
+
+desc3 <-flextable(desc3) %>%
+  merge_v(j=1)%>% 
+  theme_vanilla()
+```
+
+### Table 2: Number of registered claims by subcategory and length of stay
+```{r table_n_days, echo=FALSE}
+desc3
+```
+
+### Figure 2: Distribution of inpatient days for all patients, 2015-2018
+```{r fig2, echo=FALSE, fig.height=8, fig.width=11, message=FALSE, warning=FALSE}
+
+ggplot(dat , aes(x = inpatient_days, y=..density..)) + 
+  theme_bw() +
+  geom_histogram(color = "black", fill="gray", binwidth = 1, alpha=0) +
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.5) +
+  #geom_text(aes(x=15, label="15", y=-0.001), angle=360, size=5) +
+  # geom_vline(xintercept = c(breaks, 15), colour = "grey10", linetype="dashed", alpha=0.5)+
+  labs(title = " ", subtitle = " ", y="Prop.", x = "Number of inpatient days") + 
+  theme(strip.background = element_blank())+
+  xlim(0, 120)+
+  scale_x_continuous(breaks=breaks)+
+  facet_wrap(~ Condition2)
+
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig2.png" )
+```
+
+## Section 2: Calculating predicted probabilities after correction
+
+In the following section, we estimate the predicted probabilities of discharge for each day of inpatient care after correcting for patient characteristics and day of the week effects. In Figure 3, we present the actual and predicted probabilities of discharge for each inpatient day. The graphical representation of predicted probabilities allows us to visually determine whether any sudden jumps occur in the predicted probability of a discharge within weeks. For most care-types, the string of weekly probabilities created using the week-dummies follows a relatively smooth curve with the exception of a sudden jump between week 2 (ending one day before the threshold) and week 3 (beginning with the threshold) and weeks 2-5 for the care-type chronic pain and mental disorders. (See full regression output in Appendix Table 2.) The jump is most pronounced in the case of organ disorder, but also present for most other subcategories as well   
+
+```{r logit, include=FALSE}
+
+fullrun <- 1
+list_predictions <- list()
+list_cond <- c("Amputation", "Brain Disorder", "Chronic pain", "Musculoskeletal systems",
+"Nervous system", "Organ Disorder", "Paraplegia")
+
+list_mod <- list()
+
+if(fullrun){
+  
+  for(i in 1:7){
+  
+expand <- dat %>%
+  tidyr::uncount(120)%>%
+  filter(Condition2==list_cond[[i]])%>%
+  group_by(koppel_id_prest_za)%>%
+  mutate(days.index=row_number(),
+         discharge=ifelse(days.index==inpatient_days,1,0),
+         week.dummies=factor(cut(days.index, breaks=breaks, labels=F)))%>%
+  filter(days.index %in% 1:121)%>%
+  group_by(Condition2, week.dummies, days.index, agecat2, d.fkgc, female)%>%
+  sample_frac(1)%>%
+  ungroup()
+
+mod <-glm(model.f, family=binomial(link="logit"), data=expand)
+        
+newdat <- expand %>%
+  mutate_at(list_age, ~ replace(., which(.!=0), 0)) %>%
+  mutate(agecat2_18==1,
+         d.fkgc==0)
+
+newdat$pred <-predict.glm(mod, type="response", newdata=newdat)
+
+newdat <- newdat %>%
+          dplyr::select(Condition2,
+                          discharge,
+                          days.index,
+                          week.dummies,
+                          inpatient_days,
+                          pred)
+
+list_predictions[[i]] <- newdat
+
+}
+
+preds <-Reduce(rbind, list_predictions)
+
+saveRDS(preds, "U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/preds.rds")
+
+
+
+} else {
+  
+preds <- readRDS("U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/preds.rds")
+
+
+}
+
+graph <- preds %>%
+  filter(discharge==1)%>%
+  group_by(Condition2, inpatient_days, week.dummies)%>%
+  summarize(day.pred=mean(pred),
+            day.actual=sum(discharge))%>%
+  group_by(Condition2)%>%
+  mutate(sum=sum(day.actual),
+    p.actual=day.actual/sum)%>%
+  ungroup()
+
+mx_actual <-  preds %>%
+  filter(discharge==1)%>%
+  group_by(Condition2, week.dummies)%>%
+  arrange(Condition2,  week.dummies, inpatient_days)%>%
+  summarize(first=first(pred),
+            last=last(pred))%>%
+  group_by(Condition2)%>%
+  mutate(mx=first-lag(last))
+  
+```
+
+### Figure 3: Predicted vs. actual probabilities of discharge per inpatient day, 2015-2020
+```{r logit graph, echo=FALSE}
+
+ggplot(graph) + 
+    theme_bw() +
+    geom_point(aes(x= inpatient_days, y=p.actual, group=week.dummies), alpha=0.5) +
+    geom_line(aes(x= inpatient_days, y=day.pred, group=week.dummies), color = "red", size=0.8) +
+    geom_vline (xintercept = 15, color="black", size = 0.1) +
+    geom_vline(xintercept = breaks, colour = "grey", linetype="dashed", alpha=0.5)+
+    labs(title = " ", subtitle = " ", y="Prop.", x = "Number of inpatient days") + 
+    theme(strip.background = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+    facet_wrap(~Condition2, scales = "free")+
+    xlim(1,120)
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig3.png" )
+
+```
+
+## Section 3: Marginal effects
+
+In Section 3, we intend to capture the size of the gap between weeks by calculating the difference in the predicted probability of discharge between the last day of each week and the first day of the following week, which we refer to as weekly partial effects. Using boostrapping method, we create standard errors around these partial effects and test their statistical significance.  As shown in Figure 4, partial effects at week 3 are considerably larger than at any other week with the only exception of amputation, and they are statistically significant in all cases. 
+
+```{r logit bootstrap, eval=FALSE, include=FALSE}
+
+list_cond <- c("Amputation", "Brain Disorder", "Chronic pain", "Musculoskeletal systems",
+"Nervous system", "Organ Disorder", "Paraplegia")
+list_predictions <- list()
+list.mx.2 <-list()
+
+
+breaks <- c(0, 7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 105, 112, 121)
+
+fullrun <- 0
+
+if(fullrun){
+  
+  reps=100
+  
+  list.mx <- list()
+
+for(j in 1:reps)
+      {
+  
+dat.boot <- dat%>%
+  sample_frac(1, replace=T)
+        
+  for(i in 1:7){
+  
+expand <- dat.boot %>%
+  tidyr::uncount(120)%>%
+  filter(Condition2==list_cond[[i]])%>%
+  group_by(koppel_id_prest_za)%>%
+  mutate(days.index=row_number(),
+         discharge=ifelse(days.index==inpatient_days,1,0),
+         week.dummies=factor(cut(days.index, breaks=breaks, labels=F)))%>%
+  filter(days.index %in% 1:121)%>%
+  group_by(Condition2, week.dummies, days.index, agecat2, d.fkgc, female)%>%
+  sample_frac(1)%>%
+  ungroup()
+
+mod <-glm(model.f, family=binomial(link="logit"), data=expand)
+        
+newdat <- expand %>%
+  mutate_at(list_age, ~ replace(., which(.!=0), 0)) %>%
+  mutate(agecat2_18==1,
+         d.fkgc==0)
+
+newdat$pred <-predict.glm(mod, type="response", newdata=newdat)
+
+
+list_predictions[[i]] <- newdat %>%
+          dplyr::select(Condition2,
+                          discharge,
+                          days.index,
+                          week.dummies,
+                          inpatient_days,
+                          pred)
+
+}
+
+preds <-Reduce(rbind, list_predictions)
+
+
+list.mx[[j]] <-  preds %>%
+  filter(discharge==1)%>%
+  group_by(Condition2, week.dummies)%>%
+  arrange(Condition2, week.dummies, inpatient_days)%>%
+  summarize(first=first(pred),
+            last=last(pred))%>%
+  group_by(Condition2)%>%
+  mutate(mx=first-lag(last))
+
+  }
+
+preds.boot <-Reduce(rbind, list.mx)
+
+  
+saveRDS(preds.boot, "U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/preds.boot.rds")
+
+
+} else {
+  
+  
+preds.boot <- readRDS("U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/preds.boot.rds")
+
+}
+
+```
+
+```{r boxplot, echo=FALSE}
+
+level_order <- seq(2:17)
+
+ggplot(preds.boot)+
+  geom_boxplot(aes(x=factor(week.dummies, level=level_order), y=mx))+
+  geom_hline(yintercept = 0, color="red", size = 0.01)+
+  geom_vline (xintercept = 3, linetype = "dashed", color="black", size = 0.1) +
+  labs(title = " ", subtitle = " ", y="Prop.", x = "No. of weeks") + 
+  facet_wrap(~ Condition2, scales = "free")+
+  theme_bw() +
+  theme(strip.background = element_blank())
+
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig4.png" )
+
+
+
+```
+
+```{r estimate macro effect}
+library(MASS)
+library(dplyr)
+
+list_cond <- c("Amputation", "Brain Disorder", "Chronic pain", "Musculoskeletal systems",
+"Nervous system", "Organ Disorder", "Paraplegia")
+
+list.graph <- list()
+total <- list()
+
+
+for(i in 1:7){
+  
+dat.i <- dat %>%
+  filter(Condition2==list_cond[[i]])
+    
+f1 <- fitdistr(dat.i[dat.i$inpatient_days %in% 1:110, ]$inpatient_days, "Gamma")
+
+dat.i$pred.gamma <- dgamma(dat.i$inpatient_days, f1$estimate["shape"],
+                           f1$estimate["rate"])
+
+# predict:
+dat.i2 = dat.i %>%   
+    dplyr::select(Condition2, submitted_amt, inpatient_days, pred.gamma) %>%
+    mutate(npatients = n()) %>%                       ## calculate the total no. of patients per condition
+    group_by(Condition2, inpatient_days) %>% 
+    mutate(fq = n(),
+           submitted_amt=median(submitted_amt)) %>%   ## calculate the median submitted_amt per patient
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    mutate(sum_fq=sum(fq),
+           perc=fq/sum_fq) %>% 
+    group_by(Condition2, inpatient_days) %>% 
+    mutate(npatient_pred = round(npatients*pred.gamma),    ## spread the total no. of patients for predicted
+           pment_actual = submitted_amt*fq,
+           pment_pred = submitted_amt*npatient_pred) %>% 
+    group_by(Condition2) %>%
+    mutate(ratio_pment = sum(pment_pred)/sum(pment_actual))
+
+total[[i]] <- dat.i2 %>%
+  group_by(Condition2) %>% 
+  mutate(total.perc=sum(perc),
+         total.pred=sum(pred.gamma)) %>%
+  filter(inpatient_days<15) %>%
+  summarise(ratio_pment = mean(ratio_pment), ## just to collapse to a scalar
+         sum.perc=mean(total.perc),
+         sum.pred=mean(total.pred),
+         npatients=mean(npatients))
+
+list.graph[[i]] <-ggplot(dat.i2) + 
+  theme_bw() +
+    geom_line(aes(x=inpatient_days,
+                  y=pred.gamma), color="red")+
+    geom_bar(aes(x=inpatient_days,
+                   y=perc), stat="identity", size = 0.2) +
+    geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.5) +
+    #geom_text(aes(x=15, label="Day 15", y=-0.05), angle=360, size=3) +
+    #labs(title = "Predicted PDF - Gamma distribution", subtitle = " ", y="Prop.", x = "Number of inpatient days") + 
+  theme(strip.background = element_blank())+
+    facet_wrap(~Condition2, scales = "free")
+}
+
+total <- Reduce(rbind, total)
+
+total <- total %>%
+  #ungroup() %>% 
+  mutate(sum_npatient=sum(npatients)) %>% 
+  group_by(Condition2) %>%
+  mutate(mean_ratio_pment=(npatients/sum_npatient) * ratio_pment) %>%
+  #ungroup() %>%
+  mutate(mean_ratio_pment = sum(mean_ratio_pment))
+
+do.call(grid.arrange, list.graph)
+```
+
+```{r fin health}
+library(readxl)
+
+fin.health <- data.frame(read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/AGBs_fin_indicators.xlsx", sheet = "Sheet3"))
+
+fin.health2 <- fin.health %>%
+  filter(!is.na(Rentabiliteit)) %>%
+  mutate(rent.pos=ifelse(Rentabiliteit > 0, "Fin. Healthy", "Fin. Distressed")) %>%
+  dplyr::select(agb, rent.pos)
+
+dat3 <- merge(dat, fin.health2, by="agb")
+
+ggplot(dat3 , aes(x = inpatient_days)) + 
+  theme_bw() +
+  geom_histogram(color="black", fill="gray", binwidth = 1, alpha=0.2) +
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.5) +
+  labs(title = "", subtitle = " ", y="Freq", x = "Number of inpatient days") + 
+  theme(strip.background = element_blank())+
+  theme(strip.text.x = element_text(size = 7))+
+  xlim(0, 120)+
+  scale_x_continuous(breaks=15)+
+  facet_grid(rent.pos ~ Condition2, scales = "free")
+
+```
+
+```{r fin health 2}
+healthy <- dat3 %>%
+    filter(rent.pos=="Fin. Healthy") %>%
+    dplyr::select(Condition2, inpatient_days, agb)
+
+distress <- dat3 %>%
+    filter(rent.pos=="Fin. Distressed") %>%
+    dplyr::select(Condition2, inpatient_days, agb)
+
+ggplot(healthy , aes(x = inpatient_days)) + 
+  theme_bw() +
+  geom_histogram(color = "black", fill="gray", binwidth = 1, alpha=0.5) +
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.5) +
+  #geom_text(aes(x=15, label="15", y=-0.001), angle=360, size=5) +
+  # geom_vline(xintercept = c(breaks, 15), colour = "grey10", linetype="dashed", alpha=0.5)+
+  labs(title = "Financially Healthy", subtitle = " ", y="Freq", x = "Number of inpatient days") + 
+  theme(strip.background = element_blank())+
+  xlim(0, 120)+
+  scale_x_continuous(breaks=breaks)+
+  facet_wrap(~ Condition2, scales = "free")
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig_fin_healthy.png" )
+
+
+ggplot(distress , aes(x = inpatient_days)) + 
+  theme_bw() +
+  geom_histogram(fill="gray", binwidth = 1, alpha=0.2) +
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.5) +
+  #geom_text(aes(x=15, label="15", y=-0.001), angle=360, size=5) +
+  # geom_vline(xintercept = c(breaks, 15), colour = "grey10", linetype="dashed", alpha=0.5)+
+  labs(title = "Financially Distressed- All conditions", subtitle = " ", y="Freq", x = "Number of inpatient days") + 
+  theme(strip.background = element_blank())+
+  xlim(0, 120)+
+  scale_x_continuous(breaks=breaks)+
+  facet_wrap(~ Condition2, scales="free")
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig_fin_distress.png" )
+
+
+
+```
+
+# Discussion
+
+Earlier research has shown that health care providers respond to abrupt increases in reimbursement schedules by extending treatments to reach the higher tariff and then discharging patients directly following the threshold (e.g. @Einav2018b, @Eliason, while @Pletscher found that such distortions were only significant for patients where the financial incentive was sufficiently large and @Pott found no significant distortion at all.  The purpose of our study is to evaluate a similar financial incentive in the context of rehabilitation care in the Netherlands. Dutch rehabilitation care is reimbursed using a lower tariff schedule for care provided either in an outpatient setting (with no inpatient days) or with up to 15 days of hospital stay. Once the patient has been in hospital care for 15 days or longer reimbursement increases to a higher, so-called clinical, tariff-schedule. This presents the provider with a clear incentive to extend care past the 14 days of inpatient care, leading to artificially extended hospital stays near the threshold, unnecessary risks and discomfort for the patient and excessive healthcare costs for society as a whole.
+
+In Section 1, we descriptively present  the distribution of claims per the number of inpatient days. Our results in Figure 2 and Table 1 appear to correspond with the distortions caused  by the abrupt introduction of the higher tariff. We find that in most cases, patients are discharged with 15 or more days of treatment, which leads to a missing mass of registered claims between 1 and 14 days of inpatient care, followed by an excess of claims registered directly following the 15-day threshold. (Figure 1). Although this unique distribution of hospital stays is in line with our hypothesis, it may be a result of the natural progression of treatments for patients with certain characteristics, or it may be influenced by the fact that the likelihood of a discharge fluctuates within the week. Therefore, in Section 2 we correct for patient characteristics (sex, age, and previous healthcare spending) and weekdays and run a logit regression estimating the probability of discharge for each inpatient day and adding dummy variables to indicate 7 day intervals. In Figure 3, we present the distribution of actual and predicted probabilities of discharge for each care-type. Although the predicted probabilities per week follow an approximately smooth curve for most care-types, a sudden jump can be observed between week 2 and 3, exactly where the 15-day threshold lies, indicating that the partial difference in predicted probabilities at the 15-days remains significant after correcting for patient characteristics and weekday effects. Although this difference is significant for all care-types, it is the most pronounced for organ disorders.
+Although our findings show convincing evidence for strong providers’ response to the financi•al incentive at 15-days, our research has certain limitations. Lacking a clear control group with dissimilar incentives, we cannot estimate the magnitude of strategic discharge precisely. Also, it is probable that in addition to the apparent over-treatment caused by the 15-day threshold, there is also under-treatment occurring. Whereby certain patients, whose care would normally involve between 1 and 14 days of hospital stay, are denied inpatient care and are treated entirely in outpatient facilities. It is possible that providers do not (or cannot) provide care in the first 15 days of care, as tariffs in this case only include outpatient care and do not cover hospital stays. Therefore, the patient would create a net loss to the organization. In this case, providers behave as cost minimizers and not as profit maximizers. Due to a lack of a strong control group, we were unable to clearly quantify the effect of 15-day threshold on patient care and healthcare expenditures. 
+
+Our results are partially in contrast with our findings in Gaspar-Koolman (2021) where a similar situation, albeit in monetary terms much smaller, incentive was analyzed in outpatient rehabilitation care in the Netherlands. In that study we found that rehabilitation centers (also the focus of the present paper) showed only a moderate response to the financial incentive. This leads us to conclude that the same institution may respond differently depending on the magnitude of the incentive. 
+
+In conclusion, our results lead to strong evidence for providers’ response to financial incentives created by the one-off increase in tariffs at 15 days in Dutch rehabilitation care.  Our findings, therefore, support the notion that sudden changes in provider revenue can lead to avoidable distortions in the amount and quality of care provided. This suggests that such distortions might also arise as health care reimbursement systems move away from piecewise payments towards different bundling arrangements. It is not clear, however, whether our findings are driven by providers’ profit maximization goals or simply a necessity to cover total costs per patient. In the former case, policymakers must strive to eliminate all discontinuities from the reimbursement system. In the case of the latter, it is sufficient to ensure that tariffs cover average costs throughout the treatment process.  Therefore, an optimal contracting design therefore might involve basic fixed payment to ensure the profitability of the organization, with a volume-based payment to insure the incentive to treat.  
+
+
+# Appendix
+
+```{r appendix1, include=FALSE}
+
+library(readxl)
+tbl <- read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/rehabilitation_wouter.xlsx")
+
+tbl <- tbl[,c("Zorgproductcode",
+              "Ingangsdatum",
+              "Min dagen", 
+              "Max dagen", 
+              "Min uren", 
+              "Max uren", 
+              "Type",
+              "Aandoening",
+              "Staffel")]
+
+# upload translation of subcategories:
+trans <- read_excel("U:/datarepos_bron_onderzoek_revalidatie/Extras/rehabilitation_wouter.xlsx", 
+            sheet = "Sheet1")
+tbl <- merge(tbl, trans, by="Aandoening", all=T)
+
+tbl <- tbl %>%
+  mutate(year=substring(tbl$Ingangsdatum, 1,4),
+         clin=ifelse(tbl$Type=="Poliklinisch", 0, 1))%>%
+  filter(year %in% 2015:2018)%>%
+  arrange(Condition, year)%>%
+  dplyr::select(Condition, Staffel, clin, year,`Min uren`)
+
+names(tbl)[names(tbl) == c("Condition", "Staffel", "clin", "year", "Min uren")] <- c("Condition", "Level", "clin", "Year", "Min. hours")
+
+tbl <- tbl %>% 
+  group_by(Condition, Level, Year, clin) %>% 
+  summarize(`Min. hours` = median(`Min. hours`, na.rm = T)) %>%
+  pivot_wider(names_from = "Year", values_from = `Min. hours`)
+
+tbl$"NA" <- NULL
+tbl <- tbl[!is.na(tbl$Level), ]
+
+tbl_clin <- tbl %>%
+  filter(clin==1)%>%
+  dplyr::select(- clin)
+
+tbl_nonclin <- tbl %>%
+  filter(clin==0)%>%
+  dplyr::select(- clin)
+
+tbl_clin <-flextable(tbl_clin) %>%
+  merge_v(j=1)%>% 
+#  add_header_row(colwidths = c(rep(2,9)), values = header)%>%
+#  merge_h(i=1)%>%
+  theme_vanilla()
+
+tbl_nonclin <-flextable(tbl_nonclin) %>%
+  merge_v(j=1)%>% 
+#  add_header_row(colwidths = c(rep(2,9)), values = header)%>%
+#  merge_h(i=1)%>%
+  theme_vanilla()
+
+```
+
+
+\newpage
+### Appendix Table 1: Minimum weighted hours of treatment by type and level of care, 2015-2018
+```{r appendix_table_clin, echo=FALSE, warning=FALSE}
+tbl_clin
+```
+\newpage
+
+
+\newpage
+### Appendix Table 1: Minimum weighted hours of treatment by type and level of care, 2015-2018
+```{r appendix_table_nonclin, echo=FALSE, warning=FALSE}
+tbl_nonclin
+```
+\newpage
+
+### Appendix Figure 1: Regulated prices per weighted treatment hours for all care-types in 2018
+```{r appendix tariff1, echo=FALSE}
+table <- read_fst( "U:/datarepos_bron_onderzoek_revalidatie/Extras/tariff_table.fst")
+
+#clean table:
+table <- table %>%
+  group_by(Condition, Staffel, beginjaar, clin) %>%
+  filter(row_number() == 1)
+
+table <- table %>%
+  filter(beginjaar==2018,
+         Condition!="Short rehabilitation") %>%
+  group_by(Condition, Zorgproductcode, clin) %>%
+  summarise(aprice=mean(aprice, na.rm=T)/1000,
+            minhr=mean(minhr)) %>%
+  arrange(Condition, clin, minhr) %>%
+  group_by(Condition, clin) %>%
+  mutate(maxhr=lead(minhr-1),
+         maxhr=ifelse(is.na(maxhr), 1000, maxhr),
+         aprice=aprice*1000,
+         diff=maxhr-minhr)
+
+table2 <- table %>%
+  group_by(Condition, clin)%>%
+  tidyr::uncount(diff) %>%
+  mutate(whr.index=row_number(),
+         `Type of care`=factor(clin, levels =c(0,1), labels = c("Non-Clinical", "Clinical")))
+
+plot1<-ggplot(table2)+
+  theme_bw()+
+  geom_line(aes(x=whr.index, y=aprice, linetype=`Type of care`))+
+  xlab("Weighted treatment hours") + 
+  ylab("Regulated tariff (in 1000 EUR)") + 
+  scale_color_discrete(name = "Legend", labels = c("Clinical", "Non-Clinical"))+
+  #theme(legend.position = c(0.75, 0.25))+ 
+  facet_wrap(~ Condition, ncol = 2)+
+    theme_bw() +
+  theme(strip.background = element_blank())
+  
+
+plot1
+
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig4.png" )
+
+```
+
+### Appendix Figure 2: Percentage change in tariffs per inpatient day in 2018
+```{r appendix tariffs2, echo=FALSE}
+
+# Marginal tariff per day:
+tariff2 <- dat %>%
+  filter(inpatient_days %in% 1:120) %>%
+  group_by(Condition2, inpatient_days) %>%
+  summarize(mean.whr = mean(whr),
+            median.tariff=round(median(submitted_amt)),
+            mean.tariff=round(mean(submitted_amt)/1000),
+            sd.tariff=sd(submitted_amt))
+
+ggplot(tariff2)+
+  theme_bw()+
+  geom_line(aes(x=inpatient_days, y=mean.tariff), color="black")+
+  xlab("Discharge days") + 
+  ylab("Avg.tariff per discharge day (1000 €)")+
+  geom_vline (xintercept = 15, linetype = "dashed", color="black", size = 0.1) +
+  geom_text(aes(x=15, label="Day 15", y=50), angle=360, size=3.5)+
+  facet_wrap(~ Condition2)
+
+ggsave("U:/datarepos_bron_onderzoek_revalidatie/Results/fig5.png" )
+
+```
+
+
+### Appendix Figure 3: Ratio of regulated prices to negotiated prices per care-type, 2015-2018
+
+```{r appendix tariff4, echo=FALSE}
+
+table <- read_fst( "U:/datarepos_bron_onderzoek_revalidatie/Extras/tariff_table.fst")
+
+table <- merge(dat, table, by.x=c("zorgproduct", "beginjaar", "Condition"), by.y=c("Zorgproductcode", "beginjaar", "Condition"))
+
+table <- table %>%
+  filter(beginjaar==2018,
+         Condition!="Short rehabilitation") %>%
+  arrange(Condition, clin, minhr) %>%
+  group_by(Condition, clin) %>%
+  mutate(
+    aprice=aprice*1000,
+    diff=minhr-lag(minhr),
+    ratio=(submitted_amt/aprice),
+    `Clinical care`=factor(clin, levels = c(0,1), labels = c("No", "Yes")),
+    `Care-type`=Condition) %>%
+  group_by(`Care-type`, `Clinical care`) %>%
+  summarise(`Ratio Mean (%)`=mean(ratio)*100,
+            `Ratio SD (%)`=sd(ratio)*100) %>%
+  mutate_at(3:4, round, 2)
+
+table2 <-flextable(table) %>%
+  merge_v(j=1)%>% 
+  theme_vanilla()
+
+table2
+
+```
+
+\newpage
+
+### Appendix Table 2: logit regression output
+```{r Appendix logit regression output}
+
+
+fullrun <- 1
+
+list_mod<-list()
+
+list_cond <- c("Amputation", "Brain Disorder", "Chronic pain", "Musculoskeletal systems",
+"Nervous system", "Organ Disorder", "Paraplegia")
+
+if(fullrun){
+  
+  for(i in 1:7){
+  
+expand <- dat %>%
+  tidyr::uncount(120)%>%
+  filter(Condition2==list_cond[[i]])%>%
+  group_by(koppel_id_prest_za)%>%
+  mutate(days.index=row_number(),
+         discharge=ifelse(days.index==inpatient_days,1,0),
+         week.dummies=factor(cut(days.index, breaks=breaks, labels=F)))%>%
+  filter(days.index %in% 1:121)%>%
+  group_by(Condition2, week.dummies, days.index, agecat2, d.fkgc, female)%>%
+  sample_frac(1)%>%
+  ungroup()
+
+mod <-glm(discharge ~ week.dummies:days.index + female + agecat + d.fkgc, family=binomial(link="logit"), data=expand)
+
+list_mod[[i]] <- mod
+
+}
+
+#saveRDS(list_mod, "U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/list_mod.rds")
+
+} else {
+  
+list_mod <- readRDS("U:/datarepos_bron_onderzoek_revalidatie/Git_Repo/Revalidatie/list_mod.rds")
+
+}
+
+modelsummary(list_mod,
+             coef_omit ="female|agecat|d.fkgc",
+             fmt = 3,
+  estimate  = c("{estimate} {stars}"))
+
+
+```
+
+
+
+# References
