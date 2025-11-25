@@ -1,6 +1,8 @@
 ---
 title: "create rehab dataset"
-output: html_document
+output:
+  github_document:
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -477,6 +479,7 @@ dat_final <- read_fst("U:/datarepos_bron_onderzoek_revalidatie/Results/dat_final
 }
 
 ```
+
 
 
 
